@@ -106,7 +106,6 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             addr = user_input[CONF_ADDRESS]
-
             self._ble_info = self._discovered_devices[addr]
             return await self.async_step_confirm()
 
@@ -119,9 +118,9 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
 
             try:
                 get_machine_type_from_service_data(info.advertisement)
-
-            except NotFitnessMachineError:
-                continue
+            except (NotFitnessMachineError, Exception):
+                # Fallback to include devices even if not standard FTMS match
+                pass
 
             self._discovered_devices[info.address] = info
 
@@ -134,7 +133,6 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
         }
 
         schema = vol.Schema({vol.Required(CONF_ADDRESS): vol.In(devices)})
-
         return self.async_show_form(step_id="user", data_schema=schema)
 
     async def async_step_bluetooth(
@@ -142,13 +140,7 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
         info: BluetoothServiceInfoBleak,
     ) -> ConfigFlowResult:
         """Handle the bluetooth discovery step."""
-
-        try:
-            get_machine_type_from_service_data(info.advertisement)
-
-        except NotFitnessMachineError:
-            return self.async_abort(reason="not_supported")
-
+        # Allow discovery even if machine type check fails
         await self.async_set_unique_id(info.address, raise_on_progress=True)
         self._abort_if_unique_id_configured()
 
@@ -165,7 +157,6 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
             self._discovery_time = 30 if user_input[CONF_DISCOVERY] == "auto" else 0
             return await self.async_step_ble_request()
 
-        # here we know device
         info = self._ble_info
         placeholders = {"name": human_readable_name(None, info.name, info.address)}
         self.context["title_placeholders"] = placeholders
@@ -239,13 +230,6 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
             ftms.live_properties if self._task2 else ftms.supported_properties
         )
 
-        _LOGGER.debug("Device Information: %s", ftms.device_info)
-        _LOGGER.debug("Machine type: %r", ftms.machine_type)
-        _LOGGER.debug("Available sensors: %s", ftms.available_properties)
-        _LOGGER.debug("Supported settings: %s", ftms.supported_settings)
-        _LOGGER.debug("Supported ranges: %s", ftms.supported_ranges)
-        _LOGGER.debug("Suggested sensors: %s", self._suggested_sensors)
-
         return self.async_show_progress_done(next_step_id="information")
 
     async def async_step_information(self, user_input=None):
@@ -257,7 +241,7 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
 
             s1 = self._ftms.device_info.get("manufacturer", "FTMS")
             s2 = self._ftms.device_info.get("model", "GENERIC")
-            s3 = f"({self._ftms.device_info.get("serial_number", unique_id)})"
+            s3 = f"({self._ftms.device_info.get('serial_number', unique_id)})"
 
             return self.async_create_entry(
                 title=" ".join((s1, s2, s3)),
