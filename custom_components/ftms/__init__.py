@@ -7,6 +7,7 @@ from bleak.exc import BleakError
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth.match import BluetoothCallbackMatcher
 from homeassistant.config_entries import ConfigEntry
+from pyftms import MachineType
 from homeassistant.const import (
     CONF_ADDRESS,
     CONF_SENSORS,
@@ -63,9 +64,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: FtmsConfigEntry) -> bool
             srv_info.advertisement,
             on_disconnect=_on_disconnect,
         )
-
+    
     except pyftms.NotFitnessMachineError:
-        raise ConfigEntryNotReady(translation_key="ftms_error")
+        _LOGGER.warning(
+            "Device has FTMS service but no FTMS service data. "
+            "Trying treadmill fallback."
+        )
+    
+        try:
+            ftms = pyftms.get_client(
+                srv_info.device,
+                MachineType.TREADMILL,
+                on_disconnect=_on_disconnect,
+            )
+    
+        except Exception as exc:
+            _LOGGER.exception("Treadmill fallback failed")
+            raise ConfigEntryNotReady(
+                translation_key="ftms_error"
+            ) from exc
 
     coordinator = DataCoordinator(hass, ftms)
 

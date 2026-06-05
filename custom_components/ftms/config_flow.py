@@ -28,6 +28,7 @@ from pyftms import (
     NotFitnessMachineError,
     get_client,
     get_machine_type_from_service_data,
+    MachineType,
 )
 
 from .const import DOMAIN
@@ -190,7 +191,20 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if self._ftms is None:
             info = self._ble_info
-            self._ftms = get_client(info.device, info.advertisement)
+
+            try:
+                self._ftms = get_client(info.device, info.advertisement)
+
+            except NotFitnessMachineError:
+                _LOGGER.warning(
+                    "Device has FTMS service but no FTMS service data. "
+                    "Trying treadmill fallback."
+                )
+
+                self._ftms = get_client(
+                    info.device,
+                    MachineType.TREADMILL,
+                )
 
         uncompleted_task: asyncio.Task[None] | None = None
         ftms = self._ftms
