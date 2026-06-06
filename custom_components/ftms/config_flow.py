@@ -1,5 +1,4 @@
-"""Config flow for FTMS integration."""
-
+# config_flow.py
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +22,8 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_ADDRESS, CONF_DISCOVERY, CONF_SENSORS
 from homeassistant.core import callback
 from homeassistant.helpers.selector import selector
+
+# Importing specific classes for robust initialization
 from pyftms import (
     FitnessMachine,
     NotFitnessMachineError,
@@ -30,6 +31,7 @@ from pyftms import (
     get_machine_type_from_service_data,
     MachineType,
 )
+from pyftms.client.treadmill import Treadmill
 
 from .const import DOMAIN
 
@@ -53,7 +55,10 @@ class OptionsFlowHandler(OptionsFlowWithConfigEntry):
         if not (srv_info := async_last_service_info(self.hass, address)):
             return self.async_abort(reason="no_devices_found")
 
-        cli = get_client(srv_info.device, srv_info.advertisement)
+        try:
+            cli = get_client(srv_info.device, srv_info.advertisement)
+        except NotFitnessMachineError:
+            cli = Treadmill(srv_info.device)
 
         schema = vol.Schema(
             {
@@ -141,7 +146,6 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
         info: BluetoothServiceInfoBleak,
     ) -> ConfigFlowResult:
         """Handle the bluetooth discovery step."""
-        # Allow discovery even if machine type check fails
         await self.async_set_unique_id(info.address, raise_on_progress=True)
         self._abort_if_unique_id_configured()
 
@@ -193,18 +197,15 @@ class FTMSConfigFlow(ConfigFlow, domain=DOMAIN):
             info = self._ble_info
 
             try:
+                # Try standard client initialization first
                 self._ftms = get_client(info.device, info.advertisement)
-
             except NotFitnessMachineError:
                 _LOGGER.warning(
                     "Device has FTMS service but no FTMS service data. "
-                    "Trying treadmill fallback."
+                    "Using Treadmill fallback."
                 )
-
-                self._ftms = get_client(
-                    info.device,
-                    MachineType.TREADMILL,
-                )
+                # Fallback to direct Treadmill class instantiation
+                self._ftms = Treadmill(info.device)
 
         uncompleted_task: asyncio.Task[None] | None = None
         ftms = self._ftms
